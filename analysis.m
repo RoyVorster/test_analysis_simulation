@@ -1,4 +1,4 @@
-function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode)
+function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noise)
     %% Mode setting
     if ~exist('mode', 'var')
         mode = 'normal'; 
@@ -20,22 +20,18 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode)
     end
     
     data = evalin('base', name + ".data");
-        
-    p = zeros(length(data(:, 1)), length(data(1,:)));
-    for i = 1:length(data(1,:))
-        p(:,i) = data(:,i) - mean(data(:,i));
-    end
-
+    p = data_to_p(data);
+    
     %% Parse filename
     info = struct();
     info.name = name;
 
     % Retrieve info from file name
     rpm = regexp(file_name, '(?<=_rpm)\d{2,}', 'match');
-    info.rpm = str2num(rpm{1});
+    if ~isempty(rpm); info.rpm = str2num(rpm{1}); else; info.rpm = 0; end
 
     wind_speed = regexp(file_name, '(?<=_U)\d{1,}', 'match');
-    info.wind_speed = str2num(wind_speed{1});
+    if ~isempty(wind_speed); info.wind_speed= str2num(wind_speed{1}); else; info.wind_speed = 0; end
 
     %% Parameters    
     fs = 60000;
@@ -89,14 +85,38 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode)
 %     soundsc(p(:, 41), fs);
 
     %% Calculate PSD's
-    PSD = init(info.window, log_list); 
+    
+    % Background noise
+    if exist('bg_noise', 'var') && bg_noise == 1
+        disp(bg_noise);
+        bg_noise_name = "background_noise";
+        if info.wind_speed ~= 0
+             bg_noise_name = bg_noise_name + "_U" + string(info.wind_speed);
+        end
+
+        assignin('base', 'bg_noise_name', bg_noise_name);
+        if ~evalin('base', "exist(bg_noise_name, 'var')")
+            bg_noise_path = "../matlab/Background_noise/" + bg_noise_name + ".mat";
+            assignin('base', bg_noise_name, load(bg_noise_path));
+        else
+            disp("Selecting bg noise data already in workspace")
+        end
+        
+        bg_noise_data = evalin('base', bg_noise_name + ".data");
+        bg_p = data_to_p(bg_noise_data);
+        
+        p = p - bg_p;
+    end
+
+
+    PSD = init(info.window, log_list);
     if (mode == "split_broadband_sree") || (mode == "split_tonal_sree")
         for i = 1:length(log_list)
             idx = log_list(i);
 
             broadband = tonal_splitting_sree(p, idx, npr, nrot);
             [PSD(:,i), f, spl(:,i), OASPL(:,i)] = get_psd(broadband, info.window, overlap, nfft, fs, p_ref);
-            
+
             if mode == "split_tonal_sree"
                 spl_bb = init(info.window, log_list); spl_full = init(info.window, log_list);
                 PSD_bb = init(info.window, log_list); PSD_full = init(info.window, log_list);
@@ -114,7 +134,6 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode)
 %             p(:, idx) = highpass(p(:, idx), info.f*2.5, fs);
 
             [~, f, spl_f(:,i), ~] = get_psd(p(:, idx), info.window, overlap, nfft, fs, p_ref);
-
             [spl(:,i), spl_f, f] = tonal_splitting_visual(spl_f, f);
 
             PSD = []; OASPL = [];
@@ -127,7 +146,6 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode)
         oaspl_name = name + "_OASPL"; assignin('base', 'oaspl_name', oaspl_name);
 
         PSD = []; f = []; spl = []; OASPL = [];
-
         if ~evalin('base', "exist(oaspl_name, 'var')")
             [PSD, f, spl, OASPL] = get_psds(p, 1:N_mic, info.window, overlap, nfft, fs, p_ref);
             assignin('base', oaspl_name, OASPL);
@@ -147,6 +165,7 @@ function [PSD, f, spl, OASPL] = get_psds(p, log_list, window, overlap, nfft, fs,
     for i = 1:length(log_list)
         idx = log_list(i);
 
+        PSD = init(window, log_list); spl = init(window, log_list);
         [PSD(:,i), f, spl(:,i), OASPL(:,i)] = get_psd(p(:,idx), window, overlap, nfft, fs, p_ref);
     end
 end
@@ -159,4 +178,11 @@ end
 
 function [out] = init(window, log_list)
     out = zeros(window/2 + 1, length(log_list));
+end
+
+function [p] = data_to_p(data)
+    p = zeros(length(data(:, 1)), length(data(1,:)));
+    for i = 1:length(data(1,:))
+        p(:,i) = data(:,i) - mean(data(:,i));
+    end
 end
