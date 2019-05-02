@@ -4,8 +4,10 @@ clc
 
 % If you want to add something. Add an entry in every one of these arrays.
 % So an entry in file_names for the filename, mics for which microphones
-% and modes for which mode. For modeds; there's also split_broadband and
-% split_tonal, they kinda work but not propely yet.
+% and modes for which mode. 
+
+% You can also use split_broadband_visual and
+% split_tonal_visual for nice split plots. Works quite well.
 
 figure(1)
 
