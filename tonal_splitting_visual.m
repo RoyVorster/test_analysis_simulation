@@ -6,7 +6,7 @@ function [broadband, full, broadband_f] = tonal_splitting_visual(spl, f)
 
     f = interp(f, 4); spl = interp(spl, 4);
 
-%     locs = locs(2:end); widths = widths(2:end);
+    locs = locs(2:end); widths = widths(2:end);
 
 %     pks = pks(2:end);
 %     figure(10);

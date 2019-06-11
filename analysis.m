@@ -8,10 +8,10 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noi
     file_name = split(file_path, ["/", "\"]);
     file_name = file_name{end};
     
-    name = regexp(file_name, '.+(?=\.)', 'match'); name = name{1};
+    name = regexp(file_name, '.+(?=\.)', 'match'); name = name{1};    
     assignin('base', 'name', name);
     
-    disp(name);
+    fprintf("%s, mode: %s\n", name, mode);
 
     if ~evalin('base', "exist(name, 'var')")
         assignin('base', name, load(file_path));
@@ -84,11 +84,11 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noi
     
 %     soundsc(p(:, 41), fs);
 
-    %% Calculate PSD's
+    %% Background
     
-    % Background noise
     if exist('bg_noise', 'var') && bg_noise == 1
-        disp(bg_noise);
+        disp("Subtracing background noise");
+
         bg_noise_name = "background_noise";
         if info.wind_speed ~= 0
              bg_noise_name = bg_noise_name + "_U" + string(info.wind_speed);
@@ -97,17 +97,18 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noi
         assignin('base', 'bg_noise_name', bg_noise_name);
         if ~evalin('base', "exist(bg_noise_name, 'var')")
             bg_noise_path = "../matlab/Background_noise/" + bg_noise_name + ".mat";
-            assignin('base', bg_noise_name, load(bg_noise_path));
+            assignin('base', bg_noise_name, load(bg_noise_path));         
         else
             disp("Selecting bg noise data already in workspace")
         end
-        
+
         bg_noise_data = evalin('base', bg_noise_name + ".data");
-        bg_p = data_to_p(bg_noise_data);
-        
-        p = p - bg_p;
+        bg_noise_data = data_to_p(bg_noise_data);
+    else
+        bg_noise_data = 0;
     end
 
+    %% Calculate PSD's
 
     PSD = init(info.window, log_list);
     if (mode == "split_broadband_sree") || (mode == "split_tonal_sree")
@@ -131,9 +132,13 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noi
         for i = 1:length(log_list)
             idx = log_list(i);
 
-%             p(:, idx) = highpass(p(:, idx), info.f*2.5, fs);
-
             [~, f, spl_f(:,i), ~] = get_psd(p(:, idx), info.window, overlap, nfft, fs, p_ref);
+
+            if bg_noise_data ~= 0
+                [~, ~, spl_bg_f(:,i), ~] = get_psd(bg_noise_data(:, idx), info.window, overlap, nfft, fs, p_ref);
+                spl_f(:,i) = 10*log10(10.^(spl_f(:,i)/10) + 10.^(spl_bg_f(:,i)/10));
+            end
+
             [spl(:,i), spl_f, f] = tonal_splitting_visual(spl_f, f);
 
             PSD = []; OASPL = [];
@@ -157,6 +162,17 @@ function [PSD, f, spl, OASPL, info] = analysis(file_path, log_list, mode, bg_noi
         oaspl(oaspl_data);
     else
         [PSD, f, spl, OASPL] = get_psds(p, log_list, info.window, overlap, nfft, fs, p_ref);
+
+        if bg_noise_data ~= 0
+            [~, ~, bg_spl, ~] = get_psds(bg_noise_data, log_list, info.window, overlap, nfft, fs, p_ref);
+            for i = 1:length(spl(1,:))
+                length_f = length(spl)/length(bg_spl);
+                if length_f ~= 1
+                    bg_spl = interp(bg_spl, length_f); 
+                end
+                spl(:,i) = 10*log10(10.^(spl(:,i)/10) + 10.^(bg_spl(:,i)/10));
+            end
+        end
     end
 end
 
